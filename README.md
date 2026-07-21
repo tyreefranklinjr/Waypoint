@@ -4,7 +4,7 @@
 
 Waypoint models the lifecycle of an order — from authentication, through placement, inventory reservation, and customer notification — as four independently deployable services communicating over a shared event backbone. It's a hands-on implementation of patterns commonly found in distributed, event-driven backend systems: database-per-service isolation, idempotent event consumption, circuit breakers, distributed locking, and consumer-driven contract testing.
 
-> **Status:** Actively under construction. This README documents the target architecture and tracks progress against it layer by layer — see [Build status](#build-status) below for what's implemented today versus planned.
+> **Status:** Actively under construction. Layer 1 service skeletons, dependency freezing, and configuration templates are complete; containerization (Dockerfiles + Docker Compose) is next. This README documents the target architecture and tracks progress against it layer by layer — see [Build status](#build-status) below for what's implemented today versus planned.
 
 ---
 
@@ -86,31 +86,37 @@ Each service is a self-contained FastAPI application with its own dependencies, 
 ```
 waypoint/
 ├── auth-service/
-│   ├── main.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   ├── .env.example
-│   └── alembic/
-├── order-service/          (same layout)
-├── inventory-service/      (same layout)
-├── notification-service/   (same layout)
+│   ├── main.py              ✓ /health route working
+│   ├── requirements.txt     ✓ frozen via pip freeze
+│   ├── .env.example         ✓ JWT secrets + DB vars (placeholders)
+│   ├── Dockerfile           planned
+│   └── alembic/             planned
+├── order-service/           (same layout — .env.example also templates inter-service URLs)
+├── inventory-service/       (same layout — .env.example templates inventory DB vars)
+├── notification-service/    (same layout — .env.example templates mock SMTP vars)
 ├── docs/
-│   ├── architecture/
-│   ├── adr/
-│   └── failure-scenarios/
-├── docker-compose.yml
-├── docker-compose.test.yml
+│   ├── architecture/        planned
+│   ├── adr/                 planned
+│   └── failure-scenarios/   planned
+├── docker-compose.yml       planned
+├── docker-compose.test.yml  planned
 └── README.md
 ```
 
-Each `*-service/` directory is a fully independent Python project — its own virtual environment, its own dependency list, its own container image. Nothing is shared between them by design; that independence is what makes "database-per-service" and "independently deployable" true statements about this codebase rather than aspirational labels.
+Each `*-service/` directory is a fully independent Python project — its own virtual environment, its own frozen dependency list, its own configuration template. Nothing is shared between them by design; that independence is what makes "database-per-service" and "independently deployable" true statements about this codebase rather than aspirational labels.
 
 ## Quick start
 
+> `docker compose up` isn't wired up yet (see [Build status](#build-status)). Until then, each service is run individually:
+
 ```bash
 git clone https://github.com/tyreefranklinjr/Waypoint.git
-cd Waypoint
-docker compose up --build
+cd Waypoint/order-service          # repeat per service
+python3.12 -m venv order_env
+source order_env/bin/activate
+pip install -r requirements.txt
+cp .env.example .env               # fill in local values
+fastapi dev main.py
 ```
 
 Once running, each service exposes a liveness check and interactive API docs:
@@ -135,10 +141,15 @@ Significant architectural decisions are recorded as Architecture Decision Record
 
 Waypoint is being built in layers, each one a complete, independently verifiable milestone rather than a partial slice of the whole system.
 
-- [x] **Layer 1 — Service decomposition:** four independently deployable FastAPI services scaffolded, each with its own virtual environment and dependency set
-- [ ] Database-per-service wired up via Docker Compose (one Postgres instance per service)
-- [ ] Alembic migration scaffolding per service
-- [ ] Dockerfiles per service
+- [x] **Layer 1 — Service decomposition** *(in progress — skeletons complete)*
+  - [x] Four independently deployable FastAPI services scaffolded, each with its own isolated virtual environment
+  - [x] `/health` route implemented and verified locally for all four services
+  - [x] `requirements.txt` frozen (via `pip freeze`) for all four services
+  - [x] `.env.example` configuration templates per service — auth (JWT secrets + DB vars), order (DB vars + inter-service URLs), inventory (DB vars), notification (mock SMTP vars)
+  - [ ] Database-per-service wired up via Docker Compose (one Postgres instance per service)
+  - [ ] Alembic migration scaffolding per service
+  - [ ] Dockerfiles per service
+  - [ ] Verified independent deployability (redeploy one service without disturbing the others)
 - [ ] **Layer 2 — Asynchronous communication:** Kafka event backbone, idempotent consumers
 - [ ] **Layer 3 — Resilience:** circuit breakers, retries, Redis distributed locking, documented failure scenario
 - [ ] **Layer 4 — Authentication:** JWT issuance and local validation
