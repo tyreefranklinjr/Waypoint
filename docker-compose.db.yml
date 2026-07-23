@@ -1,0 +1,54 @@
+services:
+  auth-db:
+    image: postgres:15-alpine
+    container_name: waypoint-auth-db
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_secure_password
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+
+  order-db:
+    image: postgres:15-alpine
+    container_name: waypoint-order-db
+    environment:
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_secure_password
+      POSTGRES_DB: order_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+
+  inventory-db:
+    image: postgres:15-alpine
+    container_name: waypoint-inventory-db
+    environment:
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_secure_password
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+
+  notification-db:
+    image: postgres:15-alpine
+    container_name: waypoint-notification-db
+    environment:
+      POSTGRES_USER: notification_user
+      POSTGRES_PASSWORD: notification_secure_password
+      POSTGRES_DB: notification_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+
+volumes:
+  auth_db_data:
+  order_db_data:
+  inventory_db_data:
+  notification_db_data:
