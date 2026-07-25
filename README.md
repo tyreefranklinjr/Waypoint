@@ -6,7 +6,7 @@ Waypoint models the lifecycle of an order — from authentication, through place
 
 > **Status:** Actively under construction. Layer 1 service skeletons, dependency freezing, and configuration templates are complete; containerization (Dockerfiles + Docker Compose) is next. This README documents the target architecture and tracks progress against it layer by layer — see [Build status](#build-status) below for what's implemented today versus planned.
 
----
+---<img width="1390" height="1044" alt="IMG_1136" src="https://github.com/user-attachments/assets/91494f91-4bbf-4cab-a3da-08b8864facb4" />
 
 ## Table of contents
 
@@ -24,36 +24,6 @@ Waypoint models the lifecycle of an order — from authentication, through place
 ## Architecture
 
 Waypoint is decomposed into four services, each owning its own PostgreSQL database. Services communicate synchronously (REST) only where a request needs an immediate answer — e.g. token validation — and asynchronously (event bus) for everything that represents "something happened," so that no service's availability depends on another service being up at the moment of the call.
-
-```
-                 ┌───────────────┐
-   sync (JWT)    │  Auth service  │
-   ┌────────────▶│                │
-   │              └───────────────┘
-┌──────────────┐
-│ Order service │
-└──────┬────────┘
-       │ publishes: order.placed
-       ▼
-┌──────────────────┐
-│   Event bus       │
-└──────┬────────────┘
-       │ consumed by
-       ▼
-┌────────────────────┐
-│ Inventory service   │
-└──────┬───────────────┘
-       │ publishes: inventory.reserved / inventory.failed
-       ▼
-┌──────────────────┐
-│   Event bus        │
-└──────┬────────────┘
-       │ consumed by
-       ▼
-┌──────────────────────┐
-│ Notification service  │
-└───────────────────────┘
-```
 
 A rendered architecture diagram with event-flow annotations lives at `docs/architecture/event-flow.png` (added once Layer 2 is implemented).
 
