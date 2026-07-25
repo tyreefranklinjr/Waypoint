@@ -4,8 +4,6 @@
 
 Waypoint models the lifecycle of an order — from authentication, through placement, inventory reservation, and customer notification — as four independently deployable services communicating over a shared event backbone. It's a hands-on implementation of patterns commonly found in distributed, event-driven backend systems: database-per-service isolation, idempotent event consumption, circuit breakers, distributed locking, and consumer-driven contract testing.
 
-> **Status:** Actively under construction. Layer 1 service skeletons, dependency freezing, and configuration templates are complete; containerization (Dockerfiles + Docker Compose) is next. This README documents the target architecture and tracks progress against it layer by layer — see [Build status](#build-status) below for what's implemented today versus planned.
-
 ---<img width="1390" height="1044" alt="IMG_1136" src="https://github.com/user-attachments/assets/91494f91-4bbf-4cab-a3da-08b8864facb4" />
 
 ## Table of contents
