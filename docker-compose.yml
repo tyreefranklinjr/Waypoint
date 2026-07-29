@@ -1,0 +1,135 @@
+services:
+  # ============================================================================
+  # 1. DATABASE LAYER (Isolated per service pattern)
+  # ============================================================================
+  auth-db:
+    image: postgres:15-alpine
+    container_name: waypoint-auth-db
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_secure_password
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - waypoint-network
+
+  order-db:
+    image: postgres:15-alpine
+    container_name: waypoint-order-db
+    environment:
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_secure_password
+      POSTGRES_DB: order_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    networks:
+      - waypoint-network
+
+  inventory-db:
+    image: postgres:15-alpine
+    container_name: waypoint-inventory-db
+    environment:
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_secure_password
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    networks:
+      - waypoint-network
+
+  notification-db:
+    image: postgres:15-alpine
+    container_name: waypoint-notification-db
+    environment:
+      POSTGRES_USER: notification_user
+      POSTGRES_PASSWORD: notification_secure_password
+      POSTGRES_DB: notification_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+    networks:
+      - waypoint-network
+
+  # ============================================================================
+  # 2. MICROSERVICES LAYER (FastAPI Runtimes)
+  # ============================================================================
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: waypoint-auth-service
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://auth_user:auth_secure_password@auth-db:5432/auth_db
+    depends_on:
+      - auth-db
+    networks:
+      - waypoint-network
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: waypoint-order-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://order_user:order_secure_password@order-db:5432/order_db
+    depends_on:
+      - order-db
+    networks:
+      - waypoint-network
+
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: waypoint-inventory-service
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://inventory_user:inventory_secure_password@inventory-db:5432/inventory_db
+    depends_on:
+      - inventory-db
+    networks:
+      - waypoint-network
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: waypoint-notification-service
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://notification_user:notification_secure_password@notification-db:5432/notification_db
+    depends_on:
+      - notification-db
+    networks:
+      - waypoint-network
+
+# ==============================================================================
+# 3. GLOBAL VOLUMES & SHARED NETWORKS
+# ==============================================================================
+volumes:
+  auth_db_data:
+  order_db_data:
+  inventory_db_data:
+  notification_db_data:
+
+networks:
+  waypoint-network:
+    driver: bridge
