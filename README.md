@@ -6,7 +6,7 @@ Four services, Auth, Order, Inventory, and Notification, each own their data out
 
 ## Architecture
 
-<img width="1390" height="1044" alt="Waypoint architecture diagram" src="https://github.com/user-attachments/assets/91494f91-4bbf-4cab-a3da-08b8864facb4" />
+![Waypoint architecture diagram](docs/architecture.jpg)
 
 An order placed against `order-service` triggers a synchronous JWT check against `auth-service`, then publishes `order.placed`. `inventory-service` consumes that event, reserves stock against a Redis-backed lock to avoid overselling under concurrent requests, and republishes either `inventory.reserved` or `inventory.failed`. `notification-service` consumes that outcome and closes the loop with the customer. No service calls another's database directly. Everything downstream of the initial request happens over the event bus, so `inventory-service` or `notification-service` being temporarily unavailable never blocks order acceptance.
 
