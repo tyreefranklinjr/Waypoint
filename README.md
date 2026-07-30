@@ -1,132 +1,102 @@
 # Waypoint
 
-**An event-driven order fulfillment platform demonstrating service decomposition, asynchronous messaging, and resilience patterns at small scale.**
+Event-driven order fulfillment platform built to work through the architectural patterns that actually show up in production distributed systems: service decomposition with database-per-service isolation, asynchronous messaging with idempotent consumers, resilience under partial failure, and consumer-driven contract testing across service boundaries.
 
-Waypoint models the lifecycle of an order — from authentication, through placement, inventory reservation, and customer notification — as four independently deployable services communicating over a shared event backbone. It's a hands-on implementation of patterns commonly found in distributed, event-driven backend systems: database-per-service isolation, idempotent event consumption, circuit breakers, distributed locking, and consumer-driven contract testing.
-
----<img width="1390" height="1044" alt="IMG_1136" src="https://github.com/user-attachments/assets/91494f91-4bbf-4cab-a3da-08b8864facb4" />
-
-## Table of contents
-
-- [Architecture](#architecture)
-- [Service catalog](#service-catalog)
-- [Tech stack](#tech-stack)
-- [Repository structure](#repository-structure)
-- [Quick start](#quick-start)
-- [Design decisions](#design-decisions)
-- [Build status](#build-status)
-- [Roadmap](#roadmap)
-
----
+Four services, Auth, Order, Inventory, and Notification, each own their data outright and communicate over a mix of synchronous REST (only where a caller needs an immediate answer) and asynchronous events (everywhere something merely happened and downstream services can catch up on their own schedule).
 
 ## Architecture
 
-Waypoint is decomposed into four services, each owning its own PostgreSQL database. Services communicate synchronously (REST) only where a request needs an immediate answer — e.g. token validation — and asynchronously (event bus) for everything that represents "something happened," so that no service's availability depends on another service being up at the moment of the call.
+<img width="1390" height="1044" alt="Waypoint architecture diagram" src="https://github.com/user-attachments/assets/91494f91-4bbf-4cab-a3da-08b8864facb4" />
 
-A rendered architecture diagram with event-flow annotations lives at `docs/architecture/event-flow.png` (added once Layer 2 is implemented).
+An order placed against `order-service` triggers a synchronous JWT check against `auth-service`, then publishes `order.placed`. `inventory-service` consumes that event, reserves stock against a Redis-backed lock to avoid overselling under concurrent requests, and republishes either `inventory.reserved` or `inventory.failed`. `notification-service` consumes that outcome and closes the loop with the customer. No service calls another's database directly. Everything downstream of the initial request happens over the event bus, so `inventory-service` or `notification-service` being temporarily unavailable never blocks order acceptance.
 
-## Service catalog
+Event delivery is treated as at-least-once, not exactly-once, because Kafka doesn't guarantee otherwise and pretending it does is how you end up double-charging a customer. Every consumer records processed event IDs in its own table, in the same transaction as the side effect it performs, so replays and duplicate deliveries are a no-op rather than a duplicate charge or double notification.
 
-| Service | Responsibility | Owns | Exposes |
-|---|---|---|---|
-| **auth-service** | Issues and validates JWTs; manages user credentials | User accounts, hashed credentials | `POST /login`, `POST /token/refresh`, JWKS endpoint for local token validation |
-| **order-service** | Accepts and records customer orders | Orders, order line items | `POST /orders`, `GET /orders/{id}` &nbsp;·&nbsp; publishes `order.placed` |
-| **inventory-service** | Tracks and reserves stock | Product stock levels | `GET /products/{id}` &nbsp;·&nbsp; consumes `order.placed` → publishes `inventory.reserved` / `inventory.failed` |
-| **notification-service** | Notifies customers of order status | Notification log | consumes `inventory.reserved` / `inventory.failed` |
+## Services
 
-Each service is a self-contained FastAPI application with its own dependencies, its own database, and its own Dockerfile. No service imports code from another, and no service queries another's database directly — all cross-service communication happens over documented APIs or events.
-
-## Tech stack
-
-| Layer | Choice | Why |
+| Service | Owns | Public interface |
 |---|---|---|
-| API framework | FastAPI + Uvicorn | Async-native, automatic OpenAPI docs, strong typing via Pydantic |
-| Database | PostgreSQL (one instance per service) | Enforces the database-per-service boundary at the infrastructure level, not just convention |
-| ORM / migrations | SQLAlchemy 2.x + Alembic | Version-controlled schema evolution from day one |
-| Event backbone | Kafka | Chosen over RabbitMQ for consumer offset/replay semantics — see [ADR-0002](docs/adr/0002-kafka-over-rabbitmq.md) |
-| Caching / locking | Redis | Distributed locks for race-condition-prone operations (e.g. stock decrement) |
-| Resilience | tenacity | Retry with backoff on synchronous inter-service calls, paired with a circuit breaker |
-| Containerization | Docker + Docker Compose | Independent build and deploy per service; one-command local environment |
-| Testing | pytest, Pact | Unit/integration tests per service; consumer-driven contract tests across service boundaries |
+| `auth-service` | Users, hashed credentials, signing keys | `POST /login`, `POST /token/refresh`, JWKS endpoint |
+| `order-service` | Orders, order line items | `POST /orders`, `GET /orders/{id}`, publishes `order.placed` |
+| `inventory-service` | Product stock levels | `GET /products/{id}`, consumes `order.placed`, publishes `inventory.reserved` / `inventory.failed` |
+| `notification-service` | Notification log | consumes `inventory.reserved` / `inventory.failed` |
 
-## Repository structure
+Each is a standalone FastAPI application with its own virtual environment, its own frozen dependency set, its own Dockerfile, and its own database. Nothing is imported across service boundaries. That's not a style preference, it's what makes it possible to redeploy `inventory-service` on its own without coordinating a release with the other three.
 
-```
-waypoint/
-├── auth-service/
-│   ├── main.py              ✓ /health route working
-│   ├── requirements.txt     ✓ frozen via pip freeze
-│   ├── .env.example         ✓ JWT secrets + DB vars (placeholders)
-│   ├── Dockerfile           planned
-│   └── alembic/             planned
-├── order-service/           (same layout — .env.example also templates inter-service URLs)
-├── inventory-service/       (same layout — .env.example templates inventory DB vars)
-├── notification-service/    (same layout — .env.example templates mock SMTP vars)
-├── docs/
-│   ├── architecture/        planned
-│   ├── adr/                 planned
-│   └── failure-scenarios/   planned
-├── docker-compose.yml       planned
-├── docker-compose.test.yml  planned
-└── README.md
-```
+## Stack
 
-Each `*-service/` directory is a fully independent Python project — its own virtual environment, its own frozen dependency list, its own configuration template. Nothing is shared between them by design; that independence is what makes "database-per-service" and "independently deployable" true statements about this codebase rather than aspirational labels.
+| | |
+|---|---|
+| API | FastAPI, Uvicorn |
+| Data | PostgreSQL, one instance per service, no shared schema |
+| Migrations | Alembic, per service |
+| Messaging | Kafka |
+| Locking | Redis |
+| Resilience | tenacity for retry and backoff, circuit breaker on synchronous calls |
+| Auth | JWT, RS256, local signature validation via JWKS rather than per-request introspection |
+| Testing | pytest, Pact for consumer-driven contracts |
+| Orchestration | Docker, Docker Compose |
 
-## Quick start
+Kafka over RabbitMQ was a deliberate call. The deciding factor was consumer offset replay, since testing idempotency properly means being able to reprocess a topic from an earlier offset on demand, and that's a first-class Kafka operation in a way it isn't in Rabbit's model. Full reasoning is in `docs/adr/0002-kafka-over-rabbitmq.md`.
 
-> `docker compose up` isn't wired up yet (see [Build status](#build-status)). Until then, each service is run individually:
+## Running it
 
 ```bash
 git clone https://github.com/tyreefranklinjr/Waypoint.git
-cd Waypoint/order-service          # repeat per service
-python3.12 -m venv order_env
-source order_env/bin/activate
-pip install -r requirements.txt
-cp .env.example .env               # fill in local values
-fastapi dev main.py
+cd Waypoint
+docker compose up --build
 ```
 
-Once running, each service exposes a liveness check and interactive API docs:
-
-| Service | Health check | API docs |
+| Service | Port | Docs |
 |---|---|---|
-| auth-service | `localhost:8000/health` | `localhost:8000/docs` |
-| order-service | `localhost:8001/health` | `localhost:8001/docs` |
-| inventory-service | `localhost:8002/health` | `localhost:8002/docs` |
-| notification-service | `localhost:8003/health` | `localhost:8003/docs` |
+| auth-service | 8000 | `/docs` |
+| order-service | 8001 | `/docs` |
+| inventory-service | 8002 | `/docs` |
+| notification-service | 8003 | `/docs` |
+
+Each service also ships its own `.env.example`. Copy it to `.env` and fill in local values before running outside Compose.
 
 ## Design decisions
 
-Significant architectural decisions are recorded as Architecture Decision Records in [`docs/adr/`](docs/adr/), following the standard context → decision → alternatives → consequences format. Notable ones:
+Architecturally significant calls are written up as ADRs rather than buried in commit history: context, decision, alternatives considered, consequences. See [`docs/adr/`](docs/adr/):
 
-- [ADR-0001: Database-per-service](docs/adr/0001-database-per-service.md)
-- [ADR-0002: Kafka over RabbitMQ](docs/adr/0002-kafka-over-rabbitmq.md)
-- [ADR-0003: Local JWT validation over introspection](docs/adr/0003-jwt-local-validation-vs-introspection.md)
-- [ADR-0004: Transactional outbox for event publishing](docs/adr/0004-outbox-pattern-for-event-publishing.md)
+- [0001, Database-per-service](docs/adr/0001-database-per-service.md)
+- [0002, Kafka over RabbitMQ](docs/adr/0002-kafka-over-rabbitmq.md)
+- [0003, Local JWT validation over introspection](docs/adr/0003-jwt-local-validation-vs-introspection.md)
+- [0004, Transactional outbox for event publishing](docs/adr/0004-outbox-pattern-for-event-publishing.md)
 
-## Build status
+## Status
 
-Waypoint is being built in layers, each one a complete, independently verifiable milestone rather than a partial slice of the whole system.
+Layer 1, service decomposition, is complete: four services, four isolated databases, independently containerized and independently deployable, verified by tearing one down and rebuilding it without touching the other three. Layers 2 through 5, async messaging, resilience, auth, and contract testing, are in progress.
 
-- [x] **Layer 1 — Service decomposition** *(in progress — skeletons complete)*
-  - [x] Four independently deployable FastAPI services scaffolded, each with its own isolated virtual environment
-  - [x] `/health` route implemented and verified locally for all four services
-  - [x] `requirements.txt` frozen (via `pip freeze`) for all four services
-  - [x] `.env.example` configuration templates per service — auth (JWT secrets + DB vars), order (DB vars + inter-service URLs), inventory (DB vars), notification (mock SMTP vars)
-  - [ ] Database-per-service wired up via Docker Compose (one Postgres instance per service)
-  - [ ] Alembic migration scaffolding per service
-  - [ ] Dockerfiles per service
-  - [ ] Verified independent deployability (redeploy one service without disturbing the others)
-- [ ] **Layer 2 — Asynchronous communication:** Kafka event backbone, idempotent consumers
-- [ ] **Layer 3 — Resilience:** circuit breakers, retries, Redis distributed locking, documented failure scenario
-- [ ] **Layer 4 — Authentication:** JWT issuance and local validation
-- [ ] **Layer 5 — Testing:** Pact contract tests, dockerized integration test suite
+<details>
+<summary>Full build log</summary>
 
-## Roadmap
+**Layer 1, service decomposition** (done)
+- Four FastAPI services, isolated virtual environments and dependency sets
+- `/health` endpoint per service, verified locally
+- `requirements.txt` frozen per service
+- `.env.example` per service (JWT config for auth, inter-service URLs for order, DB vars throughout)
+- Dockerfile per service, `.dockerignore` excluding local venvs
+- PostgreSQL per service wired through `docker-compose.yml`, one network, isolated credentials
+- Alembic initialized per service
+- Independent redeploy verified, rebuilding one service does not restart the others
+- Database boundary verified directly, no service's database contains another's tables
 
-Planned beyond the core five layers: CI via GitHub Actions running the full test suite on every push, a lightweight read-only dashboard for observing event flow through the system, and a documented "what I'd do differently at production scale" write-up covering Kafka cluster sizing, secrets management, and service mesh trade-offs.
+**Layer 2, asynchronous communication** (in progress)
+Kafka event backbone, idempotent consumers via a per-service `processed_events` table, transactional outbox for reliable publishing.
+
+**Layer 3, resilience** (planned)
+tenacity retries with exponential backoff on the Auth sync call, circuit breaker around it, Redis-backed distributed lock on stock reservation, documented kill-a-service failure scenario.
+
+**Layer 4, authentication** (planned)
+Auth service issues RS256-signed JWTs. Other services validate locally against the published JWKS rather than calling back to Auth on every request.
+
+**Layer 5, testing** (planned)
+Pact consumer-driven contracts between service pairs, pytest integration suite run against `docker-compose.test.yml`.
+
+</details>
 
 ---
 
-**Author:** [Tyree Franklin Jr.](https://github.com/tyreefranklinjr)
+[Tyree Franklin Jr.](https://github.com/tyreefranklinjr)
