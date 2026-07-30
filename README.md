@@ -1,4 +1,4 @@
-# Waypoint
+# Waypoint - Distributed Order Management System
 
 Event-driven order fulfillment platform built to work through the architectural patterns that actually show up in production distributed systems: service decomposition with database-per-service isolation, asynchronous messaging with idempotent consumers, resilience under partial failure, and consumer-driven contract testing across service boundaries.
 
