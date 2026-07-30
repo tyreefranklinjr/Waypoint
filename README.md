@@ -42,7 +42,7 @@ Kafka over RabbitMQ was a deliberate call. The deciding factor was consumer offs
 ## Running it
 
 ```bash
-git clone https://github.com/tyreefranklinjr/Waypoint.git
+git clone https://github.com/tyreefranklinjr/Waypoint--Distributed-Order-Management-System.git
 cd Waypoint
 docker compose up --build
 ```
